@@ -26,4 +26,9 @@ setup(
     install_requires=[
         "requests>=2.28.0",
     ],
+    entry_points={
+        "console_scripts": [
+            "strava=strava_integration.cli:main",
+        ],
+    },
 )
