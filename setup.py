@@ -25,6 +25,7 @@ setup(
     python_requires=">=3.8",
     install_requires=[
         "requests>=2.28.0",
+        "gpxpy>=1.4.0",
     ],
     entry_points={
         "console_scripts": [

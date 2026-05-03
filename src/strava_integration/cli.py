@@ -19,6 +19,7 @@ from strava_integration.auth import (
     load_config,
     save_config,
 )
+from strava_integration.gpx_normalizer import normalize_gpx, normalize_gpx_bytes
 from strava_integration.routes import download_gpx
 
 
@@ -44,6 +45,69 @@ def cmd_download_gpx(args) -> int:
     output_path = Path(args.output) if args.output else Path(f"{args.route_id}.gpx")
     output_path.write_bytes(gpx_bytes)
     print(f"Saved {len(gpx_bytes)} bytes to {output_path}")
+    return 0
+
+
+def cmd_normalize_gpx(args) -> int:
+    source: str = args.source
+    output_arg = Path(args.output) if args.output else None
+
+    # Decide whether the source is a Strava route ID or a local file path.
+    try:
+        route_id = int(source)
+        is_route_id = True
+    except ValueError:
+        is_route_id = False
+
+    if is_route_id:
+        try:
+            config = load_config()
+        except FileNotFoundError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            return 1
+        try:
+            token = get_valid_token(config)
+        except requests.HTTPError as e:
+            print(f"Token refresh failed: {e}", file=sys.stderr)
+            return 1
+        try:
+            gpx_bytes = download_gpx(route_id, token)
+        except requests.HTTPError as e:
+            print(f"Failed to download GPX: {e}", file=sys.stderr)
+            return 1
+        output_path = output_arg or Path(f"{route_id}_normalized.gpx")
+        try:
+            orig, clean, n_detours = normalize_gpx_bytes(
+                gpx_bytes, output_path,
+                proximity_m=args.threshold,
+                min_detour_m=args.min_detour,
+                max_detour_m=args.max_detour,
+            )
+        except Exception as e:
+            print(f"Error normalizing GPX: {e}", file=sys.stderr)
+            return 1
+    else:
+        input_path = Path(source)
+        if not input_path.exists():
+            print(f"Error: File not found: {input_path}", file=sys.stderr)
+            return 1
+        default_out = input_path.parent / (input_path.stem + "_normalized" + input_path.suffix)
+        output_path = output_arg or default_out
+        try:
+            orig, clean, n_detours = normalize_gpx(
+                input_path, output_path,
+                proximity_m=args.threshold,
+                min_detour_m=args.min_detour,
+                max_detour_m=args.max_detour,
+            )
+        except Exception as e:
+            print(f"Error normalizing GPX: {e}", file=sys.stderr)
+            return 1
+
+    removed = orig - clean
+    print(f"Loaded {orig} trackpoints")
+    print(f"Removed {n_detours} detour segment(s) ({removed} points)")
+    print(f"Saved {clean} trackpoints to {output_path}")
     return 0
 
 
@@ -161,6 +225,43 @@ def main() -> None:
         help="Output file path (default: <route_id>.gpx)",
     )
     gpx_parser.set_defaults(func=cmd_download_gpx)
+
+    norm_parser = subparsers.add_parser(
+        "normalize-gpx",
+        help="Remove out-and-back detours from a GPX route",
+    )
+    norm_parser.add_argument(
+        "source",
+        help="Strava route ID (downloads first) or path to a local .gpx file",
+    )
+    norm_parser.add_argument(
+        "-o", "--output",
+        metavar="FILE",
+        default=None,
+        help="Output file path (default: <stem>_normalized.gpx or <route_id>_normalized.gpx)",
+    )
+    norm_parser.add_argument(
+        "--threshold",
+        type=float,
+        default=50.0,
+        metavar="METERS",
+        help="Max distance in metres between departure and return point to count as a detour (default: 50)",
+    )
+    norm_parser.add_argument(
+        "--min-detour",
+        type=float,
+        default=100.0,
+        metavar="METERS",
+        help="Minimum round-trip path length in metres to count as a detour (default: 100)",
+    )
+    norm_parser.add_argument(
+        "--max-detour",
+        type=float,
+        default=5000.0,
+        metavar="METERS",
+        help="Maximum round-trip path length in metres to count as a detour (default: 5000)",
+    )
+    norm_parser.set_defaults(func=cmd_normalize_gpx)
 
     args = parser.parse_args()
     sys.exit(args.func(args))
