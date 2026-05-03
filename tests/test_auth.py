@@ -74,6 +74,37 @@ class TestRefreshToken:
                 auth.refresh_token(config)
 
 
+class TestExchangeCode:
+    def test_returns_config_with_tokens(self):
+        mock_response = MagicMock()
+        mock_response.json.return_value = {
+            "access_token": "acc",
+            "refresh_token": "ref",
+            "expires_at": 9999999999,
+        }
+        mock_response.raise_for_status.return_value = None
+
+        with patch("strava_integration.auth.requests.post", return_value=mock_response) as mock_post:
+            result = auth.exchange_code("cid", "csec", "authcode", "http://localhost:9999/callback")
+
+        assert result["client_id"] == "cid"
+        assert result["client_secret"] == "csec"
+        assert result["access_token"] == "acc"
+        assert result["refresh_token"] == "ref"
+        assert result["expires_at"] == 9999999999
+        call_data = mock_post.call_args[1]["data"]
+        assert call_data["grant_type"] == "authorization_code"
+        assert call_data["code"] == "authcode"
+
+    def test_raises_on_http_error(self):
+        mock_response = MagicMock()
+        mock_response.raise_for_status.side_effect = requests.HTTPError()
+
+        with patch("strava_integration.auth.requests.post", return_value=mock_response):
+            with pytest.raises(requests.HTTPError):
+                auth.exchange_code("cid", "csec", "bad_code", "http://localhost:9999/callback")
+
+
 class TestGetValidToken:
     def test_returns_token_when_not_expired(self):
         config = {"access_token": "valid_tok", "expires_at": int(time.time()) + 3600}

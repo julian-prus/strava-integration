@@ -9,6 +9,7 @@ import requests
 
 DEFAULT_CONFIG_PATH = Path.home() / ".strava_integration" / "config.json"
 TOKEN_URL = "https://www.strava.com/oauth/token"
+AUTHORIZE_URL = "https://www.strava.com/oauth/authorize"
 
 
 def _config_path(path=None) -> Path:
@@ -63,6 +64,30 @@ def refresh_token(config: dict) -> dict:
     data = response.json()
     return {
         **config,
+        "access_token": data["access_token"],
+        "refresh_token": data["refresh_token"],
+        "expires_at": data["expires_at"],
+    }
+
+
+def exchange_code(client_id: str, client_secret: str, code: str, redirect_uri: str) -> dict:
+    """Exchange an OAuth authorization code for access and refresh tokens."""
+    response = requests.post(
+        TOKEN_URL,
+        data={
+            "client_id": client_id,
+            "client_secret": client_secret,
+            "code": code,
+            "grant_type": "authorization_code",
+            "redirect_uri": redirect_uri,
+        },
+        timeout=10,
+    )
+    response.raise_for_status()
+    data = response.json()
+    return {
+        "client_id": client_id,
+        "client_secret": client_secret,
         "access_token": data["access_token"],
         "refresh_token": data["refresh_token"],
         "expires_at": data["expires_at"],
