@@ -82,6 +82,7 @@ def cmd_normalize_gpx(args) -> int:
                 proximity_m=args.threshold,
                 min_detour_m=args.min_detour,
                 max_detour_m=args.max_detour,
+                max_lateral_m=args.max_lateral,
             )
         except Exception as e:
             print(f"Error normalizing GPX: {e}", file=sys.stderr)
@@ -99,6 +100,7 @@ def cmd_normalize_gpx(args) -> int:
                 proximity_m=args.threshold,
                 min_detour_m=args.min_detour,
                 max_detour_m=args.max_detour,
+                max_lateral_m=args.max_lateral,
             )
         except Exception as e:
             print(f"Error normalizing GPX: {e}", file=sys.stderr)
@@ -260,6 +262,14 @@ def main() -> None:
         default=5000.0,
         metavar="METERS",
         help="Maximum round-trip path length in metres to count as a detour (default: 5000)",
+    )
+    norm_parser.add_argument(
+        "--max-lateral",
+        type=float,
+        default=30.0,
+        metavar="METERS",
+        help="Max average lateral distance in metres between outward and return legs; "
+             "segments exceeding this are treated as loops, not detours (default: 30)",
     )
     norm_parser.set_defaults(func=cmd_normalize_gpx)
 

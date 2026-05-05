@@ -3,7 +3,7 @@
 import io
 import math
 from pathlib import Path
-from typing import List, NamedTuple, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 
 import gpxpy
 import gpxpy.gpx
@@ -45,22 +45,70 @@ def _parse_gpx(source) -> Tuple[gpxpy.gpx.GPX, List[Point]]:
     return parsed, points
 
 
+def _is_out_and_back(segment: List[Point], max_lateral_m: float = 30.0) -> bool:
+    """
+    Return True only if segment is a genuine out-and-back path (retraces itself).
+
+    Splits at the apex (point of maximum distance from the start), then
+    measures the average lateral distance between evenly-sampled points on the
+    outward leg and their counterparts on the return leg reversed.  A small
+    average means the two legs share the same physical road → true detour.
+    A large average means the route takes a different road back → loop closure,
+    not a detour.
+    """
+    n = len(segment)
+    if n < 4:
+        return True
+
+    anchor = segment[0]
+    apex_idx = max(range(n), key=lambda k: haversine(anchor, segment[k]))
+    if apex_idx == 0 or apex_idx == n - 1:
+        return True
+
+    outward = segment[: apex_idx + 1]
+    return_leg = list(reversed(segment[apex_idx:]))
+
+    # Sample from the shorter leg; for each sample find its nearest point
+    # on the longer leg.  This is robust to uneven point density and handles
+    # the case where the two paths are offset (same road, opposite lanes) or
+    # a duplicate anchor point at segment[0].
+    shorter = outward if len(outward) <= len(return_leg) else return_leg
+    longer = return_leg if len(outward) <= len(return_leg) else outward
+
+    samples = min(len(shorter), 10)
+    if samples < 2:
+        return True
+
+    total = 0.0
+    for k in range(samples):
+        pt = shorter[int(k * (len(shorter) - 1) / (samples - 1))]
+        total += min(haversine(pt, q) for q in longer)
+
+    return (total / samples) < max_lateral_m
+
+
 def find_detours(
     points: List[Point],
     proximity_m: float = 50.0,
     min_detour_m: float = 100.0,
     max_detour_m: float = 5000.0,
     min_index_gap: int = 5,
+    max_lateral_m: float = 30.0,
 ) -> List[Tuple[int, int]]:
     """
     Return list of (start_idx, end_idx) inclusive index ranges that are detours.
 
     A detour is a sub-path that starts near point i, travels between
     min_detour_m and max_detour_m in total, then returns within proximity_m
-    of point i. The max_detour_m cap prevents the algorithm from treating a
-    full loop or out-and-back route as one giant detour. The first and last
-    1% of the route are excluded from being matched as a pair so that
-    circular routes whose ends nearly coincide are not falsely removed.
+    of point i, AND physically retraces itself (outward and return legs share
+    the same road within max_lateral_m metres on average).
+
+    The max_lateral_m check prevents loop closures — where two different roads
+    happen to come near each other — from being falsely removed.
+
+    The first and last 1% of the route are excluded from being matched as a
+    pair so that circular routes whose ends nearly coincide are not falsely
+    removed.
     """
     n = len(points)
     if n < min_index_gap + 1:
@@ -78,8 +126,10 @@ def find_detours(
             if haversine(points[i], points[j]) < proximity_m:
                 seg_len = path_length(points[i : j + 1])
                 if min_detour_m <= seg_len <= max_detour_m:
-                    detours.append((i + 1, j - 1))
-                    i = j  # skip to the return point
+                    segment = points[i : j + 1]
+                    if _is_out_and_back(segment, max_lateral_m=max_lateral_m):
+                        detours.append((i + 1, j - 1))
+                        i = j  # skip to the return point
                 break  # take the first (nearest) return regardless
         else:
             i += 1
@@ -124,6 +174,7 @@ def normalize_gpx(
     proximity_m: float = 50.0,
     min_detour_m: float = 100.0,
     max_detour_m: float = 5000.0,
+    max_lateral_m: float = 30.0,
 ) -> Tuple[int, int, int]:
     """
     Load, normalize, and save a GPX file.
@@ -136,6 +187,7 @@ def normalize_gpx(
         proximity_m=proximity_m,
         min_detour_m=min_detour_m,
         max_detour_m=max_detour_m,
+        max_lateral_m=max_lateral_m,
     )
     clean = remove_detours(points, detours)
     _write_gpx(original, clean, output_path)
@@ -148,6 +200,7 @@ def normalize_gpx_bytes(
     proximity_m: float = 50.0,
     min_detour_m: float = 100.0,
     max_detour_m: float = 5000.0,
+    max_lateral_m: float = 30.0,
 ) -> Tuple[int, int, int]:
     """Same as normalize_gpx but accepts raw GPX bytes instead of a file path."""
     original, points = _parse_gpx(data)
@@ -156,6 +209,7 @@ def normalize_gpx_bytes(
         proximity_m=proximity_m,
         min_detour_m=min_detour_m,
         max_detour_m=max_detour_m,
+        max_lateral_m=max_lateral_m,
     )
     clean = remove_detours(points, detours)
     _write_gpx(original, clean, output_path)
