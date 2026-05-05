@@ -16,7 +16,7 @@ from strava_integration.gpx_normalizer import _parse_gpx, find_detours, remove_d
 def _gpx_bytes_to_coords(data: bytes) -> list:
     parsed = gpxpy.parse(io.StringIO(data.decode("utf-8")))
     return [
-        [pt.latitude, pt.longitude]
+        [pt.latitude, pt.longitude, pt.elevation or 0.0]
         for track in parsed.tracks
         for seg in track.segments
         for pt in seg.points
@@ -144,8 +144,8 @@ def api_normalize(request):
     clean_points = remove_detours(points, detours)
 
     return JsonResponse({
-        "original": [[p.lat, p.lon] for p in points],
-        "normalized": [[p.lat, p.lon] for p in clean_points],
+        "original": [[p.lat, p.lon, p.ele] for p in points],
+        "normalized": [[p.lat, p.lon, p.ele] for p in clean_points],
         "stats": {
             "original_points": len(points),
             "clean_points": len(clean_points),

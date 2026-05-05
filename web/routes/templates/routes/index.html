@@ -95,16 +95,20 @@
       </div>
     </div>
 
-    <!-- Legend -->
+    <!-- Legend / toggles -->
     <div class="legend hidden" id="legend">
-      <div class="legend-title">Legend</div>
-      <div class="legend-item">
+      <div class="legend-title">Show on map</div>
+      <div class="legend-toggle active hidden" id="toggle-original"
+           role="button" tabindex="0" aria-pressed="true">
         <span class="legend-line orange"></span>
-        Original route
+        <span>Original route</span>
+        <span class="toggle-check">✓</span>
       </div>
-      <div class="legend-item">
+      <div class="legend-toggle active hidden" id="toggle-normalized"
+           role="button" tabindex="0" aria-pressed="true">
         <span class="legend-line blue"></span>
-        Normalized route
+        <span>Normalized route</span>
+        <span class="toggle-check">✓</span>
       </div>
     </div>
 
@@ -121,20 +125,35 @@
       </svg>
       <p>Load a route to see it on the map</p>
     </div>
+
+    <!-- Elevation profile -->
+    <div class="elevation-panel hidden" id="elevation-panel">
+      <div class="elevation-header">
+        <span class="elevation-title">Elevation</span>
+        <span class="elevation-gains" id="elevation-gains"></span>
+      </div>
+      <div class="elevation-chart-wrap">
+        <canvas id="elevation-chart"></canvas>
+      </div>
+    </div>
   </main>
 
 </div>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
         integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
 (function () {
   'use strict';
 
   // ── State ───────────────────────────────────────────────
   let map, originalLayer, normalizedLayer;
-  let currentSource = null; // {type:'route_id',value:'...'} | {type:'file',file:File}
-  let droppedFile = null;   // File from drag-and-drop (fileInput.files is read-only)
+  let currentSource = null;
+  let droppedFile = null;
+  let currentOrigCoords = null;
+  let currentNormCoords = null;
+  let elevationChart = null;
 
   // ── Map init ────────────────────────────────────────────
   map = L.map('map', { zoomControl: true });
@@ -146,18 +165,18 @@
 
   // ── DOM refs ────────────────────────────────────────────
   const $ = id => document.getElementById(id);
-  const loadingBar    = $('loading-bar');
-  const loadingText   = $('loading-text');
-  const errorBox      = $('error-box');
-  const errorMsg      = $('error-message');
-  const normSection   = $('normalize-section');
-  const statsCard     = $('stats-card');
-  const legend        = $('legend');
-  const emptyState    = $('map-empty-state');
-  const routeInput    = $('route-id-input');
-  const fileInput     = $('gpx-file-input');
-  const chosenName    = $('chosen-filename');
-  const dropZone      = $('drop-zone');
+  const loadingBar  = $('loading-bar');
+  const loadingText = $('loading-text');
+  const errorBox    = $('error-box');
+  const errorMsg    = $('error-message');
+  const normSection = $('normalize-section');
+  const statsCard   = $('stats-card');
+  const legend      = $('legend');
+  const emptyState  = $('map-empty-state');
+  const routeInput  = $('route-id-input');
+  const fileInput   = $('gpx-file-input');
+  const chosenName  = $('chosen-filename');
+  const dropZone    = $('drop-zone');
 
   // ── UI helpers ──────────────────────────────────────────
   function setLoading(active, msg) {
@@ -171,24 +190,160 @@
     errorBox.classList.remove('hidden');
   }
 
-  function clearError() {
-    errorBox.classList.add('hidden');
+  function clearError() { errorBox.classList.add('hidden'); }
+
+  // ── Elevation helpers ────────────────────────────────────
+  function haversine2D(a, b) {
+    const R = 6371000;
+    const φ1 = a[0] * Math.PI / 180, φ2 = b[0] * Math.PI / 180;
+    const dφ = φ2 - φ1, dλ = (b[1] - a[1]) * Math.PI / 180;
+    const s = Math.sin(dφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
+    return R * 2 * Math.asin(Math.sqrt(s));
+  }
+
+  function cumDistancesKm(coords) {
+    const d = [0];
+    for (let i = 1; i < coords.length; i++) {
+      d.push(d[i-1] + haversine2D(coords[i-1], coords[i]) / 1000);
+    }
+    return d;
+  }
+
+  function elevationGainM(coords) {
+    let gain = 0;
+    for (let i = 1; i < coords.length; i++) {
+      const diff = (coords[i][2] || 0) - (coords[i-1][2] || 0);
+      if (diff > 0) gain += diff;
+    }
+    return Math.round(gain);
+  }
+
+  function hasElevationData(coords) {
+    const eles = coords.map(c => c[2] || 0);
+    return Math.max(...eles) - Math.min(...eles) > 1;
+  }
+
+  function buildDataset(coords, label, borderColor, bgColor) {
+    const dists = cumDistancesKm(coords);
+    return {
+      label,
+      data: coords.map((c, i) => ({ x: +dists[i].toFixed(3), y: +(c[2] || 0) })),
+      borderColor,
+      backgroundColor: bgColor,
+      fill: true,
+      borderWidth: 1.5,
+      pointRadius: 0,
+      tension: 0.3,
+    };
+  }
+
+  function refreshElevationChart() {
+    const panel = $('elevation-panel');
+    if (!currentOrigCoords || !hasElevationData(currentOrigCoords)) {
+      panel.classList.add('hidden');
+      return;
+    }
+    panel.classList.remove('hidden');
+
+    const hasBoth = !!currentNormCoords;
+    const gainEl = $('elevation-gains');
+    if (hasBoth) {
+      gainEl.innerHTML =
+        `<span style="color:#FC4C02">↑ ${elevationGainM(currentOrigCoords).toLocaleString()} m</span>` +
+        `&ensp;<span style="color:#2980b9">↑ ${elevationGainM(currentNormCoords).toLocaleString()} m</span>`;
+    } else {
+      gainEl.innerHTML = `<span style="color:#FC4C02">↑ ${elevationGainM(currentOrigCoords).toLocaleString()} m</span>`;
+    }
+
+    const datasets = [
+      buildDataset(
+        currentOrigCoords, 'Original',
+        hasBoth ? '#FC4C0255' : '#FC4C02',
+        hasBoth ? '#FC4C020D' : '#FC4C0222',
+      ),
+    ];
+    if (hasBoth) {
+      datasets.push(buildDataset(currentNormCoords, 'Normalized', '#2980b9', '#2980b922'));
+    }
+
+    if (elevationChart) {
+      elevationChart.data.datasets = datasets;
+      elevationChart.update('none');
+      return;
+    }
+
+    const ctx = $('elevation-chart').getContext('2d');
+    elevationChart = new Chart(ctx, {
+      type: 'line',
+      data: { datasets },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        interaction: { mode: 'index', intersect: false },
+        scales: {
+          x: {
+            type: 'linear',
+            ticks: {
+              callback: v => v.toFixed(0) + ' km',
+              maxTicksLimit: 8,
+              font: { size: 10 },
+              color: '#9a9a9a',
+            },
+            grid: { color: 'rgba(0,0,0,0.04)' },
+          },
+          y: {
+            ticks: {
+              callback: v => v + ' m',
+              maxTicksLimit: 4,
+              font: { size: 10 },
+              color: '#9a9a9a',
+            },
+            grid: { color: 'rgba(0,0,0,0.04)' },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              title: items => items[0].parsed.x.toFixed(2) + ' km',
+              label: item => `${item.dataset.label}: ${item.parsed.y.toFixed(0)} m`,
+            },
+          },
+        },
+      },
+    });
   }
 
   // ── Layer helpers ────────────────────────────────────────
   function clearAll() {
     if (originalLayer)   { map.removeLayer(originalLayer);   originalLayer = null; }
     if (normalizedLayer) { map.removeLayer(normalizedLayer); normalizedLayer = null; }
+    if (elevationChart)  { elevationChart.destroy();         elevationChart = null; }
+
     normSection.classList.add('hidden');
     statsCard.classList.add('hidden');
     legend.classList.add('hidden');
     emptyState.classList.remove('hidden');
+    $('elevation-panel').classList.add('hidden');
+
+    ['toggle-original', 'toggle-normalized'].forEach(id => {
+      const el = $(id);
+      el.classList.add('active', 'hidden');
+      el.setAttribute('aria-pressed', 'true');
+    });
+
     currentSource = null;
+    currentOrigCoords = null;
+    currentNormCoords = null;
   }
 
   function showOriginal(coords) {
     if (originalLayer)   { map.removeLayer(originalLayer);   originalLayer = null; }
     if (normalizedLayer) { map.removeLayer(normalizedLayer); normalizedLayer = null; }
+
+    currentOrigCoords = coords;
+    currentNormCoords = null;
 
     originalLayer = L.polyline(coords, {
       color: '#FC4C02', weight: 4, opacity: 0.85,
@@ -198,14 +353,21 @@
     emptyState.classList.add('hidden');
     normSection.classList.remove('hidden');
     statsCard.classList.add('hidden');
-    legend.classList.add('hidden');
+
+    $('toggle-original').classList.remove('hidden');
+    $('toggle-normalized').classList.add('hidden');
+    legend.classList.remove('hidden');
+
+    refreshElevationChart();
   }
 
-  function showNormalized(originalCoords, normalizedCoords, stats) {
+  function showNormalized(origCoords, normalizedCoords, stats) {
     if (originalLayer) {
       originalLayer.setStyle({ weight: 3, opacity: 0.35 });
     }
     if (normalizedLayer) { map.removeLayer(normalizedLayer); normalizedLayer = null; }
+
+    currentNormCoords = normalizedCoords;
 
     normalizedLayer = L.polyline(normalizedCoords, {
       color: '#2980b9', weight: 4, opacity: 0.9,
@@ -218,7 +380,10 @@
     $('stat-removed').textContent  = (stats.original_points - stats.clean_points).toLocaleString();
 
     statsCard.classList.remove('hidden');
-    legend.classList.remove('hidden');
+    $('toggle-normalized').classList.remove('hidden');
+    $('toggle-normalized').classList.add('active');
+
+    refreshElevationChart();
   }
 
   // ── API calls ────────────────────────────────────────────
@@ -317,6 +482,30 @@
     }
   });
 
+  // ── Legend toggles ───────────────────────────────────────
+  function bindToggle(id, getLayer, datasetIndex) {
+    const el = $(id);
+    function doToggle() {
+      const isActive = el.classList.toggle('active');
+      el.setAttribute('aria-pressed', String(isActive));
+      const layer = getLayer();
+      if (layer) {
+        if (isActive) map.addLayer(layer); else map.removeLayer(layer);
+      }
+      if (elevationChart && datasetIndex < elevationChart.data.datasets.length) {
+        elevationChart.data.datasets[datasetIndex].hidden = !isActive;
+        elevationChart.update('none');
+      }
+    }
+    el.addEventListener('click', doToggle);
+    el.addEventListener('keydown', e => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doToggle(); }
+    });
+  }
+
+  bindToggle('toggle-original',   () => originalLayer,   0);
+  bindToggle('toggle-normalized', () => normalizedLayer,  1);
+
   // ── Tab switching ────────────────────────────────────────
   document.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -356,7 +545,7 @@
 
   fileInput.addEventListener('change', () => {
     if (fileInput.files.length) {
-      droppedFile = null; // use fileInput.files[0] directly
+      droppedFile = null;
       chosenName.textContent = fileInput.files[0].name;
     }
   });
