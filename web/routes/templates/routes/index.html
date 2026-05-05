@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Route Visualizer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+  {% load static %}
+  <link rel="stylesheet" href="{% static 'routes/style.css' %}">
+</head>
+<body>
+<div class="app-layout">
+
+  <!-- ── SIDEBAR ───────────────────────────────────────── -->
+  <aside class="sidebar">
+
+    <header class="sidebar-header">
+      <div class="logo">
+        <svg class="logo-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+          <path d="M15.387 17.944l-2.089-4.116h-3.065L15.387 24l5.15-10.172h-3.066l-2.084 4.116z"/>
+          <path d="M11.374 10.172L9.286 6.056 4.135 16.228h3.066l4.173-8.3 2.088 4.244z"/>
+        </svg>
+        <div>
+          <div class="logo-text">Route Visualizer</div>
+          <div class="logo-sub">Powered by Strava</div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Tabs -->
+    <div class="input-tabs">
+      <button class="tab-btn active" data-tab="route-id">Route ID</button>
+      <button class="tab-btn" data-tab="upload">Upload GPX</button>
+    </div>
+
+    <!-- Route ID panel -->
+    <div class="tab-panel" id="tab-route-id">
+      <label for="route-id-input">Strava Route ID</label>
+      <input type="text" id="route-id-input"
+             placeholder="e.g. 3485649294818578590"
+             autocomplete="off" spellcheck="false">
+      <button class="btn btn-primary" id="btn-fetch">Load Route</button>
+    </div>
+
+    <!-- Upload panel -->
+    <div class="tab-panel hidden" id="tab-upload">
+      <label>GPX File</label>
+      <div class="file-drop-zone" id="drop-zone" role="button" tabindex="0"
+           aria-label="Drop GPX file or click to choose">
+        <span>Drop .gpx file here or </span>
+        <label class="file-choose-label" for="gpx-file-input">choose file</label>
+        <input type="file" id="gpx-file-input" accept=".gpx" hidden>
+        <span class="file-name" id="chosen-filename"></span>
+      </div>
+      <button class="btn btn-primary" id="btn-upload">Load File</button>
+    </div>
+
+    <!-- Loading -->
+    <div class="loading-bar hidden" id="loading-bar">
+      <div class="loading-spinner"></div>
+      <span id="loading-text">Loading…</span>
+    </div>
+
+    <!-- Error -->
+    <div class="error-box hidden" id="error-box">
+      <span id="error-message"></span>
+    </div>
+
+    <div class="divider"></div>
+
+    <!-- Normalize section -->
+    <div class="normalize-section hidden" id="normalize-section">
+      <button class="btn btn-secondary" id="btn-normalize">Normalize Route</button>
+      <p class="normalize-hint">Removes out-and-back detours</p>
+
+      <div class="stats-card hidden" id="stats-card">
+        <h3>Normalization Result</h3>
+        <div class="stat-row">
+          <span class="stat-label">Original points</span>
+          <span class="stat-value" id="stat-original">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Clean points</span>
+          <span class="stat-value" id="stat-clean">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Detours removed</span>
+          <span class="stat-value highlight" id="stat-detours">—</span>
+        </div>
+        <div class="stat-row">
+          <span class="stat-label">Points removed</span>
+          <span class="stat-value" id="stat-removed">—</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="legend hidden" id="legend">
+      <div class="legend-title">Legend</div>
+      <div class="legend-item">
+        <span class="legend-line orange"></span>
+        Original route
+      </div>
+      <div class="legend-item">
+        <span class="legend-line blue"></span>
+        Normalized route
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ── MAP ───────────────────────────────────────────── -->
+  <main class="map-container">
+    <div id="map"></div>
+    <div class="map-empty-state" id="map-empty-state">
+      <svg class="map-empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M3 7l6-4 6 4 6-4v14l-6 4-6-4-6 4V7z"/>
+        <path d="M9 3v14M15 7v14"/>
+      </svg>
+      <p>Load a route to see it on the map</p>
+    </div>
+  </main>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+(function () {
+  'use strict';
+
+  // ── State ───────────────────────────────────────────────
+  let map, originalLayer, normalizedLayer;
+  let currentSource = null; // {type:'route_id',value:'...'} | {type:'file',file:File}
+  let droppedFile = null;   // File from drag-and-drop (fileInput.files is read-only)
+
+  // ── Map init ────────────────────────────────────────────
+  map = L.map('map', { zoomControl: true });
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+    maxZoom: 19,
+  }).addTo(map);
+  map.setView([48.0, 10.0], 5);
+
+  // ── DOM refs ────────────────────────────────────────────
+  const $ = id => document.getElementById(id);
+  const loadingBar    = $('loading-bar');
+  const loadingText   = $('loading-text');
+  const errorBox      = $('error-box');
+  const errorMsg      = $('error-message');
+  const normSection   = $('normalize-section');
+  const statsCard     = $('stats-card');
+  const legend        = $('legend');
+  const emptyState    = $('map-empty-state');
+  const routeInput    = $('route-id-input');
+  const fileInput     = $('gpx-file-input');
+  const chosenName    = $('chosen-filename');
+  const dropZone      = $('drop-zone');
+
+  // ── UI helpers ──────────────────────────────────────────
+  function setLoading(active, msg) {
+    loadingText.textContent = msg || 'Loading…';
+    loadingBar.classList.toggle('hidden', !active);
+    document.querySelectorAll('.btn').forEach(b => { b.disabled = active; });
+  }
+
+  function showError(msg) {
+    errorMsg.textContent = msg;
+    errorBox.classList.remove('hidden');
+  }
+
+  function clearError() {
+    errorBox.classList.add('hidden');
+  }
+
+  // ── Layer helpers ────────────────────────────────────────
+  function clearAll() {
+    if (originalLayer)   { map.removeLayer(originalLayer);   originalLayer = null; }
+    if (normalizedLayer) { map.removeLayer(normalizedLayer); normalizedLayer = null; }
+    normSection.classList.add('hidden');
+    statsCard.classList.add('hidden');
+    legend.classList.add('hidden');
+    emptyState.classList.remove('hidden');
+    currentSource = null;
+  }
+
+  function showOriginal(coords) {
+    if (originalLayer)   { map.removeLayer(originalLayer);   originalLayer = null; }
+    if (normalizedLayer) { map.removeLayer(normalizedLayer); normalizedLayer = null; }
+
+    originalLayer = L.polyline(coords, {
+      color: '#FC4C02', weight: 4, opacity: 0.85,
+    }).addTo(map);
+    map.fitBounds(originalLayer.getBounds(), { padding: [48, 48] });
+
+    emptyState.classList.add('hidden');
+    normSection.classList.remove('hidden');
+    statsCard.classList.add('hidden');
+    legend.classList.add('hidden');
+  }
+
+  function showNormalized(originalCoords, normalizedCoords, stats) {
+    if (originalLayer) {
+      originalLayer.setStyle({ weight: 3, opacity: 0.35 });
+    }
+    if (normalizedLayer) { map.removeLayer(normalizedLayer); normalizedLayer = null; }
+
+    normalizedLayer = L.polyline(normalizedCoords, {
+      color: '#2980b9', weight: 4, opacity: 0.9,
+    }).addTo(map);
+    map.fitBounds(normalizedLayer.getBounds(), { padding: [48, 48] });
+
+    $('stat-original').textContent = stats.original_points.toLocaleString();
+    $('stat-clean').textContent    = stats.clean_points.toLocaleString();
+    $('stat-detours').textContent  = stats.detours_removed;
+    $('stat-removed').textContent  = (stats.original_points - stats.clean_points).toLocaleString();
+
+    statsCard.classList.remove('hidden');
+    legend.classList.remove('hidden');
+  }
+
+  // ── API calls ────────────────────────────────────────────
+  async function apiFetch(url, opts) {
+    const resp = await fetch(url, opts);
+    const data = await resp.json().catch(() => ({ error: `HTTP ${resp.status}` }));
+    if (!resp.ok) throw new Error(data.error || `Server error ${resp.status}`);
+    return data;
+  }
+
+  async function fetchByRouteId(routeId) {
+    return apiFetch('/api/fetch-gpx/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ route_id: routeId }),
+    });
+  }
+
+  async function uploadFile(file) {
+    const fd = new FormData();
+    fd.append('gpx_file', file);
+    return apiFetch('/api/upload-gpx/', { method: 'POST', body: fd });
+  }
+
+  async function normalizeRoute() {
+    if (currentSource.type === 'route_id') {
+      return apiFetch('/api/normalize/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ route_id: currentSource.value }),
+      });
+    } else {
+      const fd = new FormData();
+      fd.append('gpx_file', currentSource.file);
+      return apiFetch('/api/normalize/', { method: 'POST', body: fd });
+    }
+  }
+
+  // ── Event: Load Route (by ID) ────────────────────────────
+  async function handleFetchById() {
+    const routeId = routeInput.value.trim();
+    if (!routeId || !/^\d+$/.test(routeId)) {
+      showError('Please enter a valid numeric route ID.');
+      return;
+    }
+    clearAll();
+    clearError();
+    setLoading(true, 'Fetching route from Strava…');
+    try {
+      const data = await fetchByRouteId(routeId);
+      currentSource = { type: 'route_id', value: routeId };
+      showOriginal(data.coordinates);
+    } catch (e) {
+      showError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  $('btn-fetch').addEventListener('click', handleFetchById);
+  routeInput.addEventListener('keydown', e => { if (e.key === 'Enter') handleFetchById(); });
+
+  // ── Event: Load File ─────────────────────────────────────
+  async function handleUpload() {
+    const file = droppedFile || (fileInput.files.length ? fileInput.files[0] : null);
+    if (!file) { showError('Please choose or drop a .gpx file first.'); return; }
+
+    clearAll();
+    clearError();
+    setLoading(true, 'Parsing GPX file…');
+    try {
+      const data = await uploadFile(file);
+      currentSource = { type: 'file', file };
+      showOriginal(data.coordinates);
+    } catch (e) {
+      showError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  $('btn-upload').addEventListener('click', handleUpload);
+
+  // ── Event: Normalize ─────────────────────────────────────
+  $('btn-normalize').addEventListener('click', async () => {
+    if (!currentSource) return;
+    clearError();
+    setLoading(true, 'Normalizing route…');
+    try {
+      const data = await normalizeRoute();
+      showNormalized(data.original, data.normalized, data.stats);
+    } catch (e) {
+      showError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  });
+
+  // ── Tab switching ────────────────────────────────────────
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+      document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+      $('tab-' + tab).classList.remove('hidden');
+    });
+  });
+
+  // ── File input / drag-and-drop ───────────────────────────
+  function setChosenFile(file) {
+    if (!file) return;
+    droppedFile = file;
+    chosenName.textContent = file.name;
+  }
+
+  dropZone.addEventListener('click', () => fileInput.click());
+  dropZone.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
+
+  dropZone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropZone.classList.add('drag-over');
+  });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file && file.name.toLowerCase().endsWith('.gpx')) {
+      setChosenFile(file);
+    } else {
+      showError('Please drop a .gpx file.');
+    }
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) {
+      droppedFile = null; // use fileInput.files[0] directly
+      chosenName.textContent = fileInput.files[0].name;
+    }
+  });
+
+})();
+</script>
+</body>
+</html>
