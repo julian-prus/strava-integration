@@ -32,6 +32,7 @@
     <div class="input-tabs">
       <button class="tab-btn active" data-tab="route-id">Route ID</button>
       <button class="tab-btn" data-tab="upload">Upload GPX</button>
+      <button class="tab-btn" data-tab="explore">Explore</button>
     </div>
 
     <!-- Route ID panel -->
@@ -56,6 +57,21 @@
       <button class="btn btn-primary" id="btn-upload">Load File</button>
     </div>
 
+    <!-- Explore panel -->
+    <div class="tab-panel hidden" id="tab-explore">
+      <label>Activity type</label>
+      <div class="activity-toggle-group">
+        <button class="activity-btn active" data-type="riding">Cycling</button>
+        <button class="activity-btn" data-type="running">Running</button>
+      </div>
+      <button class="btn btn-primary" id="btn-explore">Explore Visible Area</button>
+      <div class="segment-count hidden" id="segment-count">
+        <span id="segment-count-value">0</span> segments found
+      </div>
+      <button class="btn btn-secondary hidden" id="btn-build-route">Build Route from Segments</button>
+      <p class="normalize-hint">Segments shown in purple. Zoom in for more precise results.</p>
+    </div>
+
     <!-- Loading -->
     <div class="loading-bar hidden" id="loading-bar">
       <div class="loading-spinner"></div>
@@ -71,11 +87,70 @@
 
     <!-- Normalize section -->
     <div class="normalize-section hidden" id="normalize-section">
-      <button class="btn btn-secondary" id="btn-normalize">Normalize Route</button>
-      <p class="normalize-hint">Removes out-and-back detours</p>
+
+      <!-- Mode tabs -->
+      <div class="norm-mode-tabs">
+        <button class="norm-mode-btn active" data-norm-mode="params">Parameters</button>
+        <button class="norm-mode-btn" data-norm-mode="draw">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/>
+          </svg>
+          Draw
+        </button>
+        <button class="norm-mode-btn" data-norm-mode="segments">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 12h18M3 6h18M3 18h18"/>
+          </svg>
+          Segments
+        </button>
+      </div>
+
+      <!-- Parameters panel -->
+      <div class="norm-mode-panel" id="norm-panel-params">
+        <button class="btn btn-secondary" id="btn-normalize">Normalize Route</button>
+        <p class="normalize-hint">Removes out-and-back detours</p>
+        <details class="params-panel">
+          <summary class="params-toggle">Parameters</summary>
+          <div class="params-grid">
+            <label class="param-label" for="param-proximity" title="How close the path must return to its origin point to be considered a detour">Return radius (m)</label>
+            <input type="number" id="param-proximity" class="param-input" value="50" min="1" step="1">
+            <label class="param-label" for="param-min-detour" title="Detours shorter than this are ignored">Min detour length (m)</label>
+            <input type="number" id="param-min-detour" class="param-input" value="100" min="1" step="1">
+            <label class="param-label" for="param-max-detour" title="Detours longer than this are kept (too large to be a simple detour)">Max detour length (m)</label>
+            <input type="number" id="param-max-detour" class="param-input" value="5000" min="1" step="1">
+            <label class="param-label" for="param-lateral" title="Max average width of an out-and-back segment — wider paths are treated as loops and kept">Max detour width (m)</label>
+            <input type="number" id="param-lateral" class="param-input" value="30" min="1" step="1">
+          </div>
+        </details>
+      </div>
+
+      <!-- Draw panel -->
+      <div class="norm-mode-panel hidden" id="norm-panel-draw">
+        <p class="draw-hint">Click and drag on the route to paint over segments you want to remove, then click Apply.</p>
+        <div class="eraser-toolbar">
+          <span class="param-label">Brush radius (m)</span>
+          <input type="number" id="eraser-radius" class="param-input" value="100" min="10" max="5000" step="10">
+        </div>
+        <div class="btn-row">
+          <button class="btn btn-ghost" id="btn-clear-eraser">Clear</button>
+          <button class="btn btn-primary" id="btn-apply-eraser">Apply</button>
+        </div>
+      </div>
+
+      <!-- Segments panel -->
+      <div class="norm-mode-panel hidden" id="norm-panel-segments">
+        <p class="draw-hint">Snaps your route to nearby Strava segments, following the most-travelled lines. Explores the route area automatically if no segments are loaded.</p>
+        <div class="eraser-toolbar">
+          <span class="param-label">Snap radius (m)</span>
+          <input type="number" id="snap-radius" class="param-input" value="30" min="5" max="500" step="5">
+        </div>
+        <button class="btn btn-primary" id="btn-snap-segments">Snap to Segments</button>
+      </div>
 
       <div class="stats-card hidden" id="stats-card">
-        <h3>Normalization Result</h3>
+        <h3>Result</h3>
         <div class="stat-row">
           <span class="stat-label">Original points</span>
           <span class="stat-value" id="stat-original">—</span>
@@ -85,13 +160,22 @@
           <span class="stat-value" id="stat-clean">—</span>
         </div>
         <div class="stat-row">
-          <span class="stat-label">Detours removed</span>
+          <span class="stat-label" id="stat-detours-label">Detours removed</span>
           <span class="stat-value highlight" id="stat-detours">—</span>
         </div>
         <div class="stat-row">
           <span class="stat-label">Points removed</span>
           <span class="stat-value" id="stat-removed">—</span>
         </div>
+        <button class="btn btn-secondary btn-download-gpx" id="btn-download-gpx">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Download Normalized GPX
+        </button>
       </div>
     </div>
 
@@ -110,6 +194,29 @@
         <span>Normalized route</span>
         <span class="toggle-check">✓</span>
       </div>
+      <div class="legend-toggle active hidden" id="toggle-segments"
+           role="button" tabindex="0" aria-pressed="true">
+        <span class="legend-line purple"></span>
+        <span>Segments</span>
+        <span class="toggle-check">✓</span>
+      </div>
+      <div class="legend-toggle active hidden" id="toggle-built-route"
+           role="button" tabindex="0" aria-pressed="true">
+        <span class="legend-line green"></span>
+        <span>Built route</span>
+        <span class="toggle-check">✓</span>
+      </div>
+    </div>
+
+    <!-- Map style -->
+    <div class="map-layers-panel">
+      <div class="legend-title">Map style</div>
+      <div class="legend-toggle" id="toggle-cyclosm"
+           role="button" tabindex="0" aria-pressed="false">
+        <span class="legend-line green"></span>
+        <span>CyclOSM</span>
+        <span class="toggle-check"></span>
+      </div>
     </div>
 
   </aside>
@@ -123,7 +230,7 @@
         <path d="M3 7l6-4 6 4 6-4v14l-6 4-6-4-6 4V7z"/>
         <path d="M9 3v14M15 7v14"/>
       </svg>
-      <p>Load a route to see it on the map</p>
+      <p>Load a route or explore segments</p>
     </div>
 
     <!-- Elevation profile -->
@@ -154,13 +261,29 @@
   let currentOrigCoords = null;
   let currentNormCoords = null;
   let elevationChart = null;
+  let normMode = 'params';
+  let isErasing = false;
+  let markedIndices = new Set();
+  let markedLayer = null;
+  let brushCircle = null;
+
+  // Segment explorer state
+  let exploredSegments = [];   // [{id, name, distance, avg_grade, coordinates}]
+  let segmentLayers = null;    // L.layerGroup of purple polylines
+  let builtRouteLayer = null;  // L.polyline in green
+  let activityType = 'riding';
 
   // ── Map init ────────────────────────────────────────────
   map = L.map('map', { zoomControl: true });
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  const osmLayer = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
     maxZoom: 19,
-  }).addTo(map);
+  });
+  const cyclOsmLayer = L.tileLayer('https://{s}.tile-cyclosm.openstreetmap.fr/cyclosm/{z}/{x}/{y}.png', {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://cyclosm.org">CyclOSM</a>',
+    maxZoom: 20,
+  });
+  osmLayer.addTo(map);
   map.setView([48.0, 10.0], 5);
 
   // ── DOM refs ────────────────────────────────────────────
@@ -315,11 +438,67 @@
     });
   }
 
+  // ── Segment helpers ──────────────────────────────────────
+  function clearSegments() {
+    if (segmentLayers) { map.removeLayer(segmentLayers); segmentLayers = null; }
+    exploredSegments = [];
+    $('segment-count').classList.add('hidden');
+    $('btn-build-route').classList.add('hidden');
+    $('toggle-segments').classList.add('hidden');
+  }
+
+  function clearBuiltRoute() {
+    if (builtRouteLayer) { map.removeLayer(builtRouteLayer); builtRouteLayer = null; }
+    $('toggle-built-route').classList.add('hidden');
+  }
+
+  function showSegments(segments) {
+    clearSegments();
+    exploredSegments = segments;
+
+    const layers = segments.map(seg =>
+      L.polyline(seg.coordinates, { color: '#8e44ad', weight: 3, opacity: 0.85, interactive: true })
+        .bindTooltip(
+          `<strong>${seg.name}</strong><br>${(seg.distance / 1000).toFixed(1)} km · ${seg.avg_grade != null ? seg.avg_grade.toFixed(1) + '% avg' : ''}`,
+          { sticky: true }
+        )
+    );
+    segmentLayers = L.layerGroup(layers).addTo(map);
+
+    $('segment-count-value').textContent = segments.length;
+    $('segment-count').classList.remove('hidden');
+    if (segments.length > 0) $('btn-build-route').classList.remove('hidden');
+
+    $('toggle-segments').classList.remove('hidden');
+    $('toggle-segments').classList.add('active');
+    $('toggle-segments').querySelector('.toggle-check').textContent = '✓';
+    legend.classList.remove('hidden');
+    emptyState.classList.add('hidden');
+  }
+
   // ── Layer helpers ────────────────────────────────────────
   function clearAll() {
+    clearSegments();
+    clearBuiltRoute();
+
     if (originalLayer)   { map.removeLayer(originalLayer);   originalLayer = null; }
     if (normalizedLayer) { map.removeLayer(normalizedLayer); normalizedLayer = null; }
     if (elevationChart)  { elevationChart.destroy();         elevationChart = null; }
+    if (markedLayer)     { map.removeLayer(markedLayer);     markedLayer = null; }
+    if (brushCircle)     { map.removeLayer(brushCircle);     brushCircle = null; }
+    markedIndices.clear();
+    isErasing = false;
+    normMode = 'params';
+    $('map').classList.remove('eraser-mode');
+    document.querySelectorAll('.norm-mode-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.normMode === 'params');
+    });
+    $('norm-panel-params').classList.remove('hidden');
+    $('norm-panel-draw').classList.add('hidden');
+    $('norm-panel-segments').classList.add('hidden');
+
+    // Reset stat card label
+    $('stat-detours-label').textContent = 'Detours removed';
 
     normSection.classList.add('hidden');
     statsCard.classList.add('hidden');
@@ -408,19 +587,165 @@
     return apiFetch('/api/upload-gpx/', { method: 'POST', body: fd });
   }
 
+  function getNormParams() {
+    return {
+      proximity_m:  parseFloat($('param-proximity').value)  || 50,
+      min_detour_m: parseFloat($('param-min-detour').value) || 100,
+      max_detour_m: parseFloat($('param-max-detour').value) || 5000,
+      max_lateral_m: parseFloat($('param-lateral').value)  || 30,
+    };
+  }
+
   async function normalizeRoute() {
+    const params = getNormParams();
     if (currentSource.type === 'route_id') {
       return apiFetch('/api/normalize/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ route_id: currentSource.value }),
+        body: JSON.stringify({ route_id: currentSource.value, ...params }),
       });
     } else {
       const fd = new FormData();
       fd.append('gpx_file', currentSource.file);
+      Object.entries(params).forEach(([k, v]) => fd.append(k, v));
       return apiFetch('/api/normalize/', { method: 'POST', body: fd });
     }
   }
+
+  // ── Eraser helpers ───────────────────────────────────────
+  function setNormMode(mode) {
+    normMode = mode;
+    document.querySelectorAll('.norm-mode-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.normMode === mode);
+    });
+    document.querySelectorAll('.norm-mode-panel').forEach(p => p.classList.add('hidden'));
+    $('norm-panel-' + mode).classList.remove('hidden');
+    if (mode === 'draw') {
+      $('map').classList.add('eraser-mode');
+    } else {
+      $('map').classList.remove('eraser-mode');
+      isErasing = false;
+      if (brushCircle) { map.removeLayer(brushCircle); brushCircle = null; }
+      clearEraserMarks();
+    }
+  }
+
+  function clearEraserMarks() {
+    markedIndices.clear();
+    if (markedLayer) { map.removeLayer(markedLayer); markedLayer = null; }
+  }
+
+  function findNearbyIndices(latlng, radiusM) {
+    if (!currentOrigCoords) return [];
+    const result = [];
+    for (let i = 0; i < currentOrigCoords.length; i++) {
+      if (map.distance(latlng, L.latLng(currentOrigCoords[i][0], currentOrigCoords[i][1])) <= radiusM) {
+        result.push(i);
+      }
+    }
+    return result;
+  }
+
+  function paintPoints(latlng) {
+    const r = parseInt($('eraser-radius').value) || 100;
+    let changed = false;
+    findNearbyIndices(latlng, r).forEach(i => {
+      if (!markedIndices.has(i)) { markedIndices.add(i); changed = true; }
+    });
+    if (changed) refreshMarkedLayer();
+  }
+
+  function refreshMarkedLayer() {
+    if (markedLayer) { map.removeLayer(markedLayer); markedLayer = null; }
+    if (markedIndices.size === 0 || !currentOrigCoords) return;
+    const segments = [];
+    let seg = [];
+    for (let i = 0; i < currentOrigCoords.length; i++) {
+      if (markedIndices.has(i)) {
+        seg.push([currentOrigCoords[i][0], currentOrigCoords[i][1]]);
+      } else {
+        if (seg.length >= 2) segments.push([...seg]);
+        seg = [];
+      }
+    }
+    if (seg.length >= 2) segments.push(seg);
+    markedLayer = L.layerGroup(
+      segments.map(s => L.polyline(s, { color: '#e74c3c', weight: 7, opacity: 0.85, interactive: false }))
+    ).addTo(map);
+  }
+
+  function applyEraser() {
+    if (!currentOrigCoords || markedIndices.size === 0) {
+      showError('No segments marked. Click and drag on the route to mark them.');
+      return;
+    }
+    const normCoords = currentOrigCoords.filter((_, i) => !markedIndices.has(i));
+    if (normCoords.length < 2) {
+      showError('Too many points erased — the resulting route would be empty.');
+      return;
+    }
+    const stats = {
+      original_points: currentOrigCoords.length,
+      clean_points: normCoords.length,
+      detours_removed: 0,
+    };
+    clearEraserMarks();
+    showNormalized(currentOrigCoords, normCoords, stats);
+  }
+
+  // ── Download normalized GPX ──────────────────────────────
+  function downloadNormalizedGpx() {
+    if (!currentNormCoords || currentNormCoords.length === 0) return;
+    const trkpts = currentNormCoords.map(([lat, lon, ele]) =>
+      `      <trkpt lat="${lat}" lon="${lon}"><ele>${(ele || 0).toFixed(1)}</ele></trkpt>`
+    ).join('\n');
+    const gpx = [
+      '<?xml version="1.0" encoding="UTF-8"?>',
+      '<gpx version="1.1" creator="Route Visualizer" xmlns="http://www.topografix.com/GPX/1/1">',
+      '  <trk><trkseg>',
+      trkpts,
+      '  </trkseg></trk>',
+      '</gpx>',
+    ].join('\n');
+    const blob = new Blob([gpx], { type: 'application/gpx+xml' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'normalized.gpx';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  $('btn-download-gpx').addEventListener('click', downloadNormalizedGpx);
+
+  // Map interaction for draw mode
+  map.on('mousedown', e => {
+    if (normMode !== 'draw' || !currentOrigCoords) return;
+    isErasing = true;
+    paintPoints(e.latlng);
+  });
+
+  map.on('mousemove', e => {
+    if (normMode !== 'draw' || !currentOrigCoords) return;
+    const r = parseInt($('eraser-radius').value) || 100;
+    if (!brushCircle) {
+      brushCircle = L.circle(e.latlng, {
+        radius: r, color: '#e74c3c', weight: 1.5,
+        fillColor: '#e74c3c', fillOpacity: 0.08, interactive: false,
+      }).addTo(map);
+    } else {
+      brushCircle.setLatLng(e.latlng);
+      brushCircle.setRadius(r);
+    }
+    if (isErasing) paintPoints(e.latlng);
+  });
+
+  map.on('mouseup', () => { isErasing = false; });
+
+  map.getContainer().addEventListener('mouseleave', () => {
+    isErasing = false;
+    if (brushCircle) { map.removeLayer(brushCircle); brushCircle = null; }
+  });
 
   // ── Event: Load Route (by ID) ────────────────────────────
   async function handleFetchById() {
@@ -474,12 +799,120 @@
     setLoading(true, 'Normalizing route…');
     try {
       const data = await normalizeRoute();
+      $('stat-detours-label').textContent = 'Detours removed';
       showNormalized(data.original, data.normalized, data.stats);
     } catch (e) {
       showError(e.message);
     } finally {
       setLoading(false);
     }
+  });
+
+  // ── Eraser buttons ───────────────────────────────────────
+  $('btn-clear-eraser').addEventListener('click', clearEraserMarks);
+  $('btn-apply-eraser').addEventListener('click', applyEraser);
+
+  // ── Norm mode tab switching ───────────────────────────────
+  document.querySelectorAll('.norm-mode-btn').forEach(btn => {
+    btn.addEventListener('click', () => setNormMode(btn.dataset.normMode));
+  });
+
+  // ── Segment explorer ─────────────────────────────────────
+  async function exploreSegments() {
+    const bounds = map.getBounds();
+    const boundsStr = [
+      bounds.getSouth(), bounds.getWest(),
+      bounds.getNorth(), bounds.getEast(),
+    ].join(',');
+    clearError();
+    setLoading(true, 'Exploring segments…');
+    try {
+      const data = await apiFetch('/api/explore-segments/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ bounds: boundsStr, activity_type: activityType }),
+      });
+      showSegments(data.segments);
+      if (data.segments.length === 0) {
+        showError('No segments found in this area. Try zooming into a well-used route.');
+      }
+    } catch (e) {
+      showError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function buildRoute() {
+    if (!exploredSegments.length) {
+      showError('Explore segments first, then click Build Route.');
+      return;
+    }
+    clearError();
+    setLoading(true, 'Building route from segments…');
+    try {
+      const data = await apiFetch('/api/build-route/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ segments: exploredSegments, connection_radius_m: 100 }),
+      });
+      if (builtRouteLayer) { map.removeLayer(builtRouteLayer); builtRouteLayer = null; }
+      builtRouteLayer = L.polyline(data.coordinates, {
+        color: '#27ae60', weight: 4, opacity: 0.9,
+      }).addTo(map);
+      map.fitBounds(builtRouteLayer.getBounds(), { padding: [48, 48] });
+
+      $('toggle-built-route').classList.remove('hidden');
+      $('toggle-built-route').classList.add('active');
+      $('toggle-built-route').querySelector('.toggle-check').textContent = '✓';
+      legend.classList.remove('hidden');
+    } catch (e) {
+      showError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function snapToSegments() {
+    if (!currentOrigCoords) return;
+    clearError();
+    setLoading(true, 'Snapping to segments…');
+    const radius = parseFloat($('snap-radius').value) || 30;
+    try {
+      const data = await apiFetch('/api/snap-to-segments/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          coordinates: currentOrigCoords,
+          segments: exploredSegments,
+          snap_radius_m: radius,
+          activity_type: activityType,
+        }),
+      });
+      $('stat-detours-label').textContent = 'Segments snapped';
+      showNormalized(currentOrigCoords, data.snapped, {
+        original_points: data.stats.original_points,
+        clean_points: data.stats.clean_points,
+        detours_removed: data.stats.segments_applied,
+      });
+    } catch (e) {
+      showError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  $('btn-explore').addEventListener('click', exploreSegments);
+  $('btn-build-route').addEventListener('click', buildRoute);
+  $('btn-snap-segments').addEventListener('click', snapToSegments);
+
+  // Activity type toggle
+  document.querySelectorAll('.activity-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.activity-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      activityType = btn.dataset.type;
+    });
   });
 
   // ── Legend toggles ───────────────────────────────────────
@@ -492,7 +925,7 @@
       if (layer) {
         if (isActive) map.addLayer(layer); else map.removeLayer(layer);
       }
-      if (elevationChart && datasetIndex < elevationChart.data.datasets.length) {
+      if (elevationChart && datasetIndex >= 0 && datasetIndex < elevationChart.data.datasets.length) {
         elevationChart.data.datasets[datasetIndex].hidden = !isActive;
         elevationChart.update('none');
       }
@@ -503,8 +936,29 @@
     });
   }
 
-  bindToggle('toggle-original',   () => originalLayer,   0);
-  bindToggle('toggle-normalized', () => normalizedLayer,  1);
+  bindToggle('toggle-original',    () => originalLayer,    0);
+  bindToggle('toggle-normalized',  () => normalizedLayer,  1);
+  bindToggle('toggle-segments',    () => segmentLayers,   -1);
+  bindToggle('toggle-built-route', () => builtRouteLayer, -1);
+
+  // ── CyclOSM basemap toggle ───────────────────────────────
+  const cyclOsmToggle = $('toggle-cyclosm');
+  function doCyclOsmToggle() {
+    const isActive = cyclOsmToggle.classList.toggle('active');
+    cyclOsmToggle.setAttribute('aria-pressed', String(isActive));
+    cyclOsmToggle.querySelector('.toggle-check').textContent = isActive ? '✓' : '';
+    if (isActive) {
+      map.removeLayer(osmLayer);
+      cyclOsmLayer.addTo(map);
+    } else {
+      map.removeLayer(cyclOsmLayer);
+      osmLayer.addTo(map);
+    }
+  }
+  cyclOsmToggle.addEventListener('click', doCyclOsmToggle);
+  cyclOsmToggle.addEventListener('keydown', e => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); doCyclOsmToggle(); }
+  });
 
   // ── Tab switching ────────────────────────────────────────
   document.querySelectorAll('.tab-btn').forEach(btn => {

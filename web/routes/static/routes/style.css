@@ -9,6 +9,7 @@
   --gray-100: #f5f5f5;
   --gray-50: #fafafa;
   --blue: #2980b9;
+  --purple: #8e44ad;
   --sidebar-w: 320px;
   --radius: 6px;
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
@@ -244,6 +245,74 @@ input[type="text"]::placeholder {
   text-align: center;
 }
 
+/* ── Parameters panel ────────────────────────────────────── */
+.params-panel {
+  border: 1px solid var(--gray-200);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.params-toggle {
+  list-style: none;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--gray-700);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  cursor: pointer;
+  user-select: none;
+  background: var(--gray-50);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.params-toggle::-webkit-details-marker { display: none; }
+
+.params-toggle::before {
+  content: '▶';
+  font-size: 9px;
+  color: var(--gray-400);
+  transition: transform .15s;
+}
+
+details[open] .params-toggle::before { transform: rotate(90deg); }
+
+.params-toggle:hover { background: var(--gray-100); }
+
+.params-grid {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 6px 10px;
+  padding: 10px 12px;
+  background: #fff;
+}
+
+.param-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-700);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.param-input {
+  width: 72px;
+  padding: 5px 8px;
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-family: var(--font);
+  color: var(--gray-900);
+  outline: none;
+  text-align: right;
+  transition: border-color .15s;
+}
+
+.param-input:focus { border-color: var(--orange); }
+
 /* ── Stats card ──────────────────────────────────────────── */
 .stats-card {
   background: var(--gray-50);
@@ -279,6 +348,16 @@ input[type="text"]::placeholder {
 .stat-label { color: var(--gray-400); }
 .stat-value { font-weight: 700; color: var(--gray-900); }
 .stat-value.highlight { color: var(--orange); }
+
+.btn-download-gpx {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  justify-content: center;
+  margin-top: 12px;
+  font-size: 12px;
+}
 
 /* ── Loading bar ─────────────────────────────────────────── */
 .loading-bar {
@@ -392,8 +471,22 @@ input[type="text"]::placeholder {
   flex-shrink: 0;
 }
 
-.legend-line.orange { background: var(--orange); }
-.legend-line.blue   { background: var(--blue); }
+.legend-line.orange  { background: var(--orange); }
+.legend-line.blue    { background: var(--blue); }
+.legend-line.green   { background: #27ae60; }
+.legend-line.purple  { background: var(--purple); }
+
+/* ── Map layers panel ────────────────────────────────────── */
+.map-layers-panel {
+  padding: 14px 20px;
+  border-top: 1px solid var(--gray-200);
+  flex-shrink: 0;
+}
+
+#toggle-cyclosm.active .toggle-check {
+  background: #27ae60;
+  border-color: #27ae60;
+}
 
 /* ── Map empty state ─────────────────────────────────────── */
 .map-empty-state {
@@ -467,3 +560,149 @@ input[type="text"]::placeholder {
   min-height: 0;
   position: relative;
 }
+
+/* ── Norm mode tabs ──────────────────────────────────────── */
+.norm-mode-tabs {
+  display: flex;
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.norm-mode-btn {
+  flex: 1;
+  padding: 7px 8px;
+  background: none;
+  border: none;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font);
+  color: var(--gray-400);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.norm-mode-btn + .norm-mode-btn {
+  border-left: 1.5px solid var(--gray-200);
+}
+
+.norm-mode-btn.active {
+  background: var(--orange-light);
+  color: var(--orange);
+}
+
+.norm-mode-btn:hover:not(.active) {
+  background: var(--gray-50);
+  color: var(--gray-700);
+}
+
+/* ── Norm mode panels ────────────────────────────────────── */
+.norm-mode-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.norm-mode-panel.hidden { display: none; }
+
+/* ── Draw panel ──────────────────────────────────────────── */
+.draw-hint {
+  font-size: 12px;
+  color: var(--gray-700);
+  line-height: 1.5;
+  background: #f0f7ff;
+  border: 1px solid #c5ddf0;
+  border-radius: var(--radius);
+  padding: 8px 10px;
+}
+
+.eraser-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.btn-row {
+  display: flex;
+  gap: 8px;
+}
+
+.btn-row .btn {
+  flex: 1;
+}
+
+.btn-ghost {
+  background: none;
+  color: var(--gray-700);
+  border: 1.5px solid var(--gray-200);
+}
+
+.btn-ghost:hover:not(:disabled) {
+  background: var(--gray-100);
+}
+
+/* Crosshair cursor in draw mode */
+#map.eraser-mode {
+  cursor: crosshair;
+}
+
+/* ── Segment legend toggle colors ────────────────────────── */
+#toggle-segments.active .toggle-check {
+  background: var(--purple);
+  border-color: var(--purple);
+}
+
+#toggle-built-route.active .toggle-check {
+  background: #27ae60;
+  border-color: #27ae60;
+}
+
+/* ── Activity type toggle group ──────────────────────────── */
+.activity-toggle-group {
+  display: flex;
+  border: 1.5px solid var(--gray-200);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.activity-btn {
+  flex: 1;
+  padding: 7px 8px;
+  background: none;
+  border: none;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font);
+  color: var(--gray-400);
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+
+.activity-btn + .activity-btn {
+  border-left: 1.5px solid var(--gray-200);
+}
+
+.activity-btn.active {
+  background: var(--orange-light);
+  color: var(--orange);
+}
+
+.activity-btn:hover:not(.active) {
+  background: var(--gray-50);
+  color: var(--gray-700);
+}
+
+/* ── Segment count badge ─────────────────────────────────── */
+.segment-count {
+  font-size: 12px;
+  color: var(--gray-400);
+  text-align: center;
+  font-weight: 600;
+  padding: 4px 0;
+}
+
+.segment-count.hidden { display: none; }
