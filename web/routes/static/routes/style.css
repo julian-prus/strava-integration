@@ -245,6 +245,25 @@ input[type="text"]::placeholder {
   text-align: center;
 }
 
+/* ── Fit-to-roads checkbox ───────────────────────────────── */
+.fit-roads-label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--gray-700);
+  cursor: pointer;
+  user-select: none;
+}
+
+.fit-roads-label input[type="checkbox"] {
+  accent-color: var(--primary, #FC4C02);
+  width: 14px;
+  height: 14px;
+  cursor: pointer;
+}
+
 /* ── Parameters panel ────────────────────────────────────── */
 .params-panel {
   border: 1px solid var(--gray-200);
@@ -661,48 +680,3 @@ details[open] .params-toggle::before { transform: rotate(90deg); }
   border-color: #27ae60;
 }
 
-/* ── Activity type toggle group ──────────────────────────── */
-.activity-toggle-group {
-  display: flex;
-  border: 1.5px solid var(--gray-200);
-  border-radius: var(--radius);
-  overflow: hidden;
-}
-
-.activity-btn {
-  flex: 1;
-  padding: 7px 8px;
-  background: none;
-  border: none;
-  font-size: 12px;
-  font-weight: 700;
-  font-family: var(--font);
-  color: var(--gray-400);
-  cursor: pointer;
-  transition: background .15s, color .15s;
-}
-
-.activity-btn + .activity-btn {
-  border-left: 1.5px solid var(--gray-200);
-}
-
-.activity-btn.active {
-  background: var(--orange-light);
-  color: var(--orange);
-}
-
-.activity-btn:hover:not(.active) {
-  background: var(--gray-50);
-  color: var(--gray-700);
-}
-
-/* ── Segment count badge ─────────────────────────────────── */
-.segment-count {
-  font-size: 12px;
-  color: var(--gray-400);
-  text-align: center;
-  font-weight: 600;
-  padding: 4px 0;
-}
-
-.segment-count.hidden { display: none; }
